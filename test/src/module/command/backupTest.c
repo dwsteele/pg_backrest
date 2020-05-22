@@ -53,7 +53,7 @@ testBackupValidateCallback(void *callbackData, const StorageInfo *info)
         {
             strCat(data->content, "file");
 
-            // Calculate checksum/size and decompress if needed
+            // Calculate checksum/uid/size and decompress if needed
             // ---------------------------------------------------------------------------------------------------------------------
             StorageRead *read = storageNewReadP(
                 data->storage,
@@ -70,6 +70,7 @@ testBackupValidateCallback(void *callbackData, const StorageInfo *info)
             ioFilterGroupAdd(ioReadFilterGroup(storageReadIo(read)), cryptoHashNew(HASH_TYPE_SHA1_STR));
 
             uint64_t size = bufUsed(storageGetP(read));
+            const String *uid = strNewFmt("%" PRIu64 "-%" PRId64, info->size, (int64_t)info->timeModified);
             const String *checksum = varStr(
                 ioFilterGroupResult(ioReadFilterGroup(storageReadIo(read)), CRYPTO_HASH_FILTER_TYPE_STR));
 
@@ -78,6 +79,12 @@ testBackupValidateCallback(void *callbackData, const StorageInfo *info)
             // Check against the manifest
             // ---------------------------------------------------------------------------------------------------------------------
             const ManifestFile *file = manifestFileFind(data->manifest, manifestName);
+
+            // Test UID. Since UID is not deterministic we'll always remove it after it has been tested.
+            if (!strEq(uid, file->uid))
+                THROW_FMT(AssertError, "calculated uid '%s' does match manifest uid '%s'", strPtr(uid), strPtr(file->uid));
+
+            ((ManifestFile *)file)->uid = NULL;
 
             // Test size and repo-size. If compressed then set the repo-size to size so it will not be in test output. Even the same
             // compression algorithm can give slightly different results based on the version so repo-size is not deterministic for
@@ -525,7 +532,7 @@ testRun(void)
 
         TEST_RESULT_BOOL(
             backupProtocol(PROTOCOL_COMMAND_BACKUP_FILE_STR, paramList, server), true, "protocol backup file - skip");
-        TEST_RESULT_STR_Z(strNewBuf(serverWrite), "{\"out\":[3,0,0,null,null]}\n", "    check result");
+        TEST_RESULT_STR_Z(strNewBuf(serverWrite), "{\"out\":[3,0,0,null,null,null]}\n", "    check result");
         bufUsedSet(serverWrite, 0);
 
         // Pg file missing - ignoreMissing=false
@@ -610,8 +617,9 @@ testRun(void)
         TEST_RESULT_BOOL(
             backupProtocol(PROTOCOL_COMMAND_BACKUP_FILE_STR, paramList, server), true, "protocol backup file - pageChecksum");
         TEST_RESULT_STR_Z(
-            strNewBuf(serverWrite),
-            "{\"out\":[1,12,12,\"719e82b52966b075c1ee276547e924179628fe69\",{\"align\":false,\"valid\":false}]}\n",
+            strNewFmt("%spresent%s", strPtr(strSubN(strNewBuf(serverWrite), 0, 93)), strPtr(strSub(strNewBuf(serverWrite), 103))),
+            "{\"out\":[1,12,12,\"719e82b52966b075c1ee276547e924179628fe69\",{\"align\":false,\"valid\":false}"
+                ",\"12-present\"]}\n",
             "    check result");
         bufUsedSet(serverWrite, 0);
 
@@ -653,7 +661,8 @@ testRun(void)
         TEST_RESULT_BOOL(
             backupProtocol(PROTOCOL_COMMAND_BACKUP_FILE_STR, paramList, server), true, "protocol backup file - noop");
         TEST_RESULT_STR_Z(
-            strNewBuf(serverWrite), "{\"out\":[4,12,0,\"719e82b52966b075c1ee276547e924179628fe69\",null]}\n", "    check result");
+            strNewBuf(serverWrite), "{\"out\":[4,12,0,\"719e82b52966b075c1ee276547e924179628fe69\",null,null]}\n",
+            "    check result");
         bufUsedSet(serverWrite, 0);
 
         // -------------------------------------------------------------------------------------------------------------------------
@@ -795,7 +804,8 @@ testRun(void)
         TEST_RESULT_BOOL(
             backupProtocol(PROTOCOL_COMMAND_BACKUP_FILE_STR, paramList, server), true, "protocol backup file - copy, compress");
         TEST_RESULT_STR_Z(
-            strNewBuf(serverWrite), "{\"out\":[0,9,29,\"9bc8ab2dda60ef4beed07d1e19ce0676d5edde67\",null]}\n", "    check result");
+            strNewBuf(serverWrite), "{\"out\":[0,9,29,\"9bc8ab2dda60ef4beed07d1e19ce0676d5edde67\",null,null]}\n",
+            "    check result");
         bufUsedSet(serverWrite, 0);
 
         // -------------------------------------------------------------------------------------------------------------------------
@@ -914,7 +924,9 @@ testRun(void)
         TEST_RESULT_BOOL(
             backupProtocol(PROTOCOL_COMMAND_BACKUP_FILE_STR, paramList, server), true, "protocol backup file - recopy, encrypt");
         TEST_RESULT_STR_Z(
-            strNewBuf(serverWrite), "{\"out\":[2,9,32,\"9bc8ab2dda60ef4beed07d1e19ce0676d5edde67\",null]}\n", "    check result");
+            strNewFmt("%spresent%s", strPtr(strSubN(strNewBuf(serverWrite), 0, 67)), strPtr(strSub(strNewBuf(serverWrite), 77))),
+            "{\"out\":[2,9,32,\"9bc8ab2dda60ef4beed07d1e19ce0676d5edde67\",null,\"32-present\"]}\n",
+            "    check result");
         bufUsedSet(serverWrite, 0);
     }
 
@@ -1391,6 +1403,7 @@ testRun(void)
         varLstAdd(result, varNewUInt64(0));
         varLstAdd(result, NULL);
         varLstAdd(result, NULL);
+        varLstAdd(result, NULL);
 
         protocolParallelJobResultSet(job, varNewVarLst(result));
 
@@ -1640,11 +1653,13 @@ testRun(void)
             storageCopy(
                 storageNewReadP(storagePg(), PG_FILE_PGVERSION_STR),
                 storageNewWriteP(
-                    storageRepoWrite(), strNewFmt(STORAGE_REPO_BACKUP "/%s/pg_data/PG_VERSION", strPtr(resumeLabel))));
+                    storageRepoWrite(), strNewFmt(STORAGE_REPO_BACKUP "/%s/pg_data/PG_VERSION", strPtr(resumeLabel)),
+                    .timeModified = 1588944873));
 
             strcpy(
                 ((ManifestFile *)manifestFileFind(manifestResume, STRDEF("pg_data/PG_VERSION")))->checksumSha1,
                 "06d06bb31b570b94d7b4325f511f853dbe771c21");
+            ((ManifestFile *)manifestFileFind(manifestResume, STRDEF("pg_data/PG_VERSION")))->uid = STRDEF("3-1588944873");
 
             // Save the resume manifest
             manifestSave(

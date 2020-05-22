@@ -31,6 +31,7 @@ typedef struct BackupFileResult
     String *copyChecksum;
     uint64_t repoSize;
     KeyValue *pageChecksumResult;
+    String *uid;                                                    // Unique identifier
 } BackupFileResult;
 
 BackupFileResult backupFile(

@@ -9,6 +9,7 @@ Posix Storage File write
 #include <utime.h>
 
 #include "common/debug.h"
+#include "common/io/filter/filter.intern.h"
 #include "common/io/write.intern.h"
 #include "common/log.h"
 #include "common/memContext.h"
@@ -33,6 +34,7 @@ typedef struct StorageWritePosix
     const String *nameTmp;
     const String *path;
     int handle;
+    const String *uid;                                              // File unique identifier
 } StorageWritePosix;
 
 /***********************************************************************************************************************************
@@ -194,6 +196,16 @@ storageWritePosixClose(THIS_VOID)
         // Sync the path
         if (this->interface.syncPath)
             storageInterfacePathSyncP(this->storage, this->path);
+
+        // The uid is a combination of the size and mtime reported by info
+        StorageInfo info = storageInterfaceInfoP(this->storage, this->interface.name, storageInfoLevelBasic);
+
+        MEM_CONTEXT_BEGIN(this->memContext)
+        {
+            this->uid = strNewFmt("%" PRIu64 "-%" PRId64, info.size, (int64_t)info.timeModified);
+        }
+        MEM_CONTEXT_END();
+
     }
 
     FUNCTION_LOG_RETURN_VOID();
@@ -214,6 +226,21 @@ storageWritePosixHandle(const THIS_VOID)
     ASSERT(this != NULL);
 
     FUNCTION_TEST_RETURN(this->handle);
+}
+
+/**********************************************************************************************************************************/
+static const String *
+storageWritePosixUid(void *thisVoid)
+{
+    THIS(StorageWritePosix);
+
+    FUNCTION_TEST_BEGIN();
+        FUNCTION_TEST_PARAM(STORAGE_WRITE_POSIX, this);
+    FUNCTION_TEST_END();
+
+    ASSERT(this != NULL);
+
+    FUNCTION_TEST_RETURN(this->uid);
 }
 
 /**********************************************************************************************************************************/
@@ -267,6 +294,8 @@ storageWritePosixNew(
                 .syncPath = syncPath,
                 .user = strDup(user),
                 .timeModified = timeModified,
+
+                .uid = storageWritePosixUid,
 
                 .ioInterface = (IoWriteInterface)
                 {

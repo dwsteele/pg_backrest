@@ -554,7 +554,7 @@ testRun(void)
         varLstAdd(paramList, varNewUInt64(0750));
         varLstAdd(paramList, NULL);
         varLstAdd(paramList, NULL);
-        varLstAdd(paramList, varNewInt(0));
+        varLstAdd(paramList, varNewUInt64(1588943827));
         varLstAdd(paramList, varNewBool(true));
         varLstAdd(paramList, varNewBool(true));
         varLstAdd(paramList, varNewBool(true));
@@ -576,7 +576,8 @@ testRun(void)
         TEST_RESULT_STR_Z(
             strNewBuf(serverWrite),
             "{}\n"
-            "{\"out\":{\"buffer\":null,\"size\":18}}\n",
+            "{\"out\":{\"buffer\":null,\"size\":18}}\n"
+            "{\"out\":\"18-1588943827\"}\n",
             "check result");
 
         TEST_RESULT_STR_Z(

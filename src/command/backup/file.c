@@ -250,6 +250,9 @@ backupFile(
                         result.pageChecksumResult = kvDup(
                             varKv(ioFilterGroupResult(ioReadFilterGroup(storageReadIo(read)), PAGE_CHECKSUM_FILTER_TYPE_STR)));
                     }
+
+                    // File unique identifier
+                    result.uid = strDup(storageWriteUid(write));
                 }
                 MEM_CONTEXT_PRIOR_END();
             }
