@@ -54,6 +54,21 @@ static const struct option optionList[] =
         .val = PARSE_OPTION_FLAG | PARSE_RESET_FLAG | cfgOptArchiveCopy,
     },
 
+    // archive-gap-detection option
+    // -----------------------------------------------------------------------------------------------------------------------------
+    {
+        .name = CFGOPT_ARCHIVE_GAP_DETECTION,
+        .val = PARSE_OPTION_FLAG | cfgOptArchiveGapDetection,
+    },
+    {
+        .name = "no-" CFGOPT_ARCHIVE_GAP_DETECTION,
+        .val = PARSE_OPTION_FLAG | PARSE_NEGATE_FLAG | cfgOptArchiveGapDetection,
+    },
+    {
+        .name = "reset-" CFGOPT_ARCHIVE_GAP_DETECTION,
+        .val = PARSE_OPTION_FLAG | PARSE_RESET_FLAG | cfgOptArchiveGapDetection,
+    },
+
     // archive-get-queue-max option
     // -----------------------------------------------------------------------------------------------------------------------------
     {
@@ -2735,6 +2750,7 @@ static const ConfigOption optionResolveOrder[] =
 {
     cfgOptStanza,
     cfgOptArchiveAsync,
+    cfgOptArchiveGapDetection,
     cfgOptArchiveGetQueueMax,
     cfgOptArchiveMode,
     cfgOptArchivePushQueueMax,

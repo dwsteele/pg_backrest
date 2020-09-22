@@ -243,6 +243,7 @@ use constant CFGOPT_REPO_S3_VERIFY_TLS                              => CFGDEF_RE
 # Archive options
 #-----------------------------------------------------------------------------------------------------------------------------------
 use constant CFGOPT_ARCHIVE_ASYNC                                   => 'archive-async';
+use constant CFGOPT_ARCHIVE_GAP_DETECTION                           => 'archive-gap-detection';
 use constant CFGOPT_ARCHIVE_GET_QUEUE_MAX                           => 'archive-get-queue-max';
 use constant CFGOPT_ARCHIVE_PUSH_QUEUE_MAX                          => 'archive-push-queue-max';
 
@@ -1685,6 +1686,10 @@ my %hConfigDefine =
         {
             &CFGCMD_BACKUP => {},
             &CFGCMD_EXPIRE => {},
+            &CFGCMD_INFO =>
+            {
+                &CFGDEF_INTERNAL => true,
+            },
         }
     },
 
@@ -1699,6 +1704,10 @@ my %hConfigDefine =
         {
             &CFGCMD_BACKUP => {},
             &CFGCMD_EXPIRE => {},
+            &CFGCMD_INFO =>
+            {
+                &CFGDEF_INTERNAL => true,
+            },
         },
         &CFGDEF_NAME_ALT =>
         {
@@ -1728,6 +1737,10 @@ my %hConfigDefine =
         {
             &CFGCMD_BACKUP => {},
             &CFGCMD_EXPIRE => {},
+            &CFGCMD_INFO =>
+            {
+                &CFGDEF_INTERNAL => true,
+            },
         }
     },
 
@@ -1762,6 +1775,10 @@ my %hConfigDefine =
         {
             &CFGCMD_BACKUP => {},
             &CFGCMD_EXPIRE => {},
+            &CFGCMD_INFO =>
+            {
+                &CFGDEF_INTERNAL => true,
+            },
         }
     },
 
@@ -2265,6 +2282,17 @@ my %hConfigDefine =
         {
             &CFGCMD_ARCHIVE_GET => {},
             &CFGCMD_ARCHIVE_PUSH => {},
+        }
+    },
+
+    &CFGOPT_ARCHIVE_GAP_DETECTION =>
+    {
+        &CFGDEF_SECTION => CFGDEF_SECTION_GLOBAL,
+        &CFGDEF_TYPE => CFGDEF_TYPE_BOOLEAN,
+        &CFGDEF_DEFAULT => false,
+        &CFGDEF_COMMAND =>
+        {
+            &CFGCMD_INFO => {},
         }
     },
 
