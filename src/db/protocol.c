@@ -10,6 +10,7 @@ Db Protocol Handler
 #include "common/type/json.h"
 #include "common/type/list.h"
 #include "config/config.h"
+#include "db/db.h"
 #include "db/protocol.h"
 #include "postgres/client.h"
 #include "postgres/interface.h"
@@ -86,6 +87,35 @@ dbQueryProtocol(PackRead *const param, ProtocolServer *const server)
         const String *const query = pckReadStrP(param);
 
         protocolServerDataPut(server, pckWriteStrP(protocolPackNew(), jsonFromVar(varNewVarLst(pgClientQuery(pgClient, query)))));
+        protocolServerDataEndPut(server);
+    }
+    MEM_CONTEXT_TEMP_END();
+
+    FUNCTION_LOG_RETURN_VOID();
+}
+
+/**********************************************************************************************************************************/
+// !!!
+void dbSyncCheckHelper(PgClient *pgClient, const String *path);
+
+void
+dbSyncCheckProtocol(PackRead *const param, ProtocolServer *const server)
+{
+    FUNCTION_LOG_BEGIN(logLevelDebug);
+        FUNCTION_LOG_PARAM(PACK_READ, param);
+        FUNCTION_LOG_PARAM(PROTOCOL_SERVER, server);
+    FUNCTION_LOG_END();
+
+    ASSERT(param != NULL);
+    ASSERT(server != NULL);
+
+    MEM_CONTEXT_TEMP_BEGIN()
+    {
+        PgClient *const pgClient = *(PgClient **)lstGet(dbProtocolLocal.pgClientList, pckReadU32P(param));
+        const String *const path = pckReadStrP(param);
+
+        dbSyncCheckHelper(pgClient, path);
+
         protocolServerDataEndPut(server);
     }
     MEM_CONTEXT_TEMP_END();

@@ -839,6 +839,9 @@ backupStart(BackupData *backupData)
             // Check database configuration
             checkDbConfig(backupData->version, backupData->pgIdxPrimary, backupData->dbPrimary, false);
 
+            // Check primary sync
+            dbSyncCheck(backupData->dbPrimary, storagePathP(backupData->storagePrimary, NULL));
+
             // Start backup
             LOG_INFO_FMT(
                 "execute %sexclusive pg_start_backup(): backup begins after the %s checkpoint completes",

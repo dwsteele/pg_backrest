@@ -3,6 +3,10 @@ Database Client
 ***********************************************************************************************************************************/
 #include "build.auto.h"
 
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include "common/debug.h"
 #include "common/log.h"
 #include "common/memContext.h"
@@ -224,7 +228,10 @@ dbOpen(Db *this)
                 "select (select setting from pg_catalog.pg_settings where name = 'server_version_num')::int4,"
                 " (select setting from pg_catalog.pg_settings where name = 'data_directory')::text,"
                 " (select setting from pg_catalog.pg_settings where name = 'archive_mode')::text,"
-                " (select setting from pg_catalog.pg_settings where name = 'archive_command')::text"));
+                " (select setting from pg_catalog.pg_settings where name = 'archive_command')::text,"
+                " (select rolsuper from pg_roles where rolname = current_role)::bool,"
+                " ((select count(*) > 0 from pg_roles where rolname = 'pg_write_server_files')::bool"
+                    " and (select pg_has_role('pg_write_server_files', 'USAGE')))::bool"));
 
         // Check that none of the return values are null, which indicates the user cannot select some rows in pg_settings
         for (unsigned int columnIdx = 0; columnIdx < varLstSize(row); columnIdx++)
@@ -250,6 +257,8 @@ dbOpen(Db *this)
             this->pub.pgDataPath = strDup(varStr(varLstGet(row, 1)));
             this->pub.archiveMode = strDup(varStr(varLstGet(row, 2)));
             this->pub.archiveCommand = strDup(varStr(varLstGet(row, 3)));
+            this->pub.superuser = varBool(varLstGet(row, 4));
+            this->pub.writeRole = varBool(varLstGet(row, 5));
         }
         MEM_CONTEXT_END();
 
@@ -450,6 +459,113 @@ dbBackupStop(Db *this)
     MEM_CONTEXT_TEMP_END();
 
     FUNCTION_LOG_RETURN_STRUCT(result);
+}
+
+/**********************************************************************************************************************************/
+#define DB_SYNC_TOTAL                                               16
+#define DB_SYNC_SIZE                                                32
+#define DB_SYNC_DATA                                                "elIlg6P7i1yQYtOfsfA4tNSn2io6QK18MzJwzjkBL2QpjuI"
+
+void
+dbSyncCheckHelper(PgClient *const pgClient, const String *const path)
+{
+    FUNCTION_LOG_BEGIN(logLevelDebug);
+        FUNCTION_LOG_PARAM(PG_CLIENT, pgClient);
+        FUNCTION_LOG_PARAM(STRING, path);
+    FUNCTION_LOG_END();
+
+    ASSERT(pgClient != NULL);
+    ASSERT(path != NULL);
+    ASSERT(sizeof(DB_SYNC_DATA) == DB_SYNC_TOTAL + DB_SYNC_SIZE);
+
+    MEM_CONTEXT_TEMP_BEGIN()
+    {
+        // Build data
+        const char *const file = strZ(strNewFmt("%s/pgbackrest.sync.tmp", strZ(path)));
+        const char *fileExpected[DB_SYNC_TOTAL];
+        const String *fileCmd[DB_SYNC_TOTAL];
+
+        for (unsigned int fileIdx = 0; fileIdx < DB_SYNC_TOTAL; fileIdx++)
+        {
+            fileExpected[fileIdx] = strZ(strNewN(DB_SYNC_DATA + fileIdx, DB_SYNC_SIZE));
+            fileCmd[fileIdx] = strNewFmt("copy (select '%s') to '%s'", fileExpected[fileIdx], file);
+
+            ASSERT(fileIdx == 0 || strncmp(fileExpected[fileIdx], fileExpected[fileIdx - 1], DB_SYNC_SIZE) != 0);
+        }
+
+        // Write data and collect results
+        struct stat fileStat[DB_SYNC_TOTAL];
+        char fileActual[DB_SYNC_TOTAL][DB_SYNC_SIZE];
+        ssize_t fileActualSize[DB_SYNC_TOTAL];
+
+        for (unsigned int fileIdx = 0; fileIdx < DB_SYNC_TOTAL; fileIdx++)
+        {
+            // Write data into the file using a copy on the pg server
+            CHECK(pgClientQuery(pgClient, fileCmd[fileIdx]) == NULL);
+
+            // Stat the file
+            THROW_ON_SYS_ERROR_FMT(stat(file, &fileStat[fileIdx]) == -1, FileReadError, "unable to stat '%s'", file);
+
+            // Read the file
+            int fd = open(file, O_RDONLY, 0);
+            THROW_ON_SYS_ERROR_FMT(fd == -1, FileOpenError, "unable to open '%s'", file);
+
+            fileActualSize[fileIdx] = read(fd, fileActual[fileIdx], DB_SYNC_SIZE);
+            THROW_ON_SYS_ERROR_FMT(fileActualSize[fileIdx] == -1, FileReadError, "unable to read '%s'", file);
+
+            THROW_ON_SYS_ERROR_FMT(close(fd) == -1, FileCloseError, "unable to close '%s'", file);
+        }
+
+        // Check results
+        for (unsigned int fileIdx = 0; fileIdx < DB_SYNC_TOTAL; fileIdx++)
+        {
+            CHECK(fileStat[fileIdx].st_size == DB_SYNC_SIZE + 1);
+            CHECK(fileActualSize[fileIdx] == DB_SYNC_SIZE);
+            CHECK(strncmp(fileExpected[fileIdx], fileActual[fileIdx], DB_SYNC_SIZE) == 0);
+
+            if (fileIdx != 0)
+                CHECK(fileStat[fileIdx].st_ino == fileStat[0].st_ino);
+        }
+
+        // !!! DELETE FILE
+    }
+    MEM_CONTEXT_TEMP_END();
+
+    FUNCTION_LOG_RETURN_VOID();
+}
+
+void
+dbSyncCheck(Db *const this, const String *const path)
+{
+    FUNCTION_LOG_BEGIN(logLevelDebug);
+        FUNCTION_LOG_PARAM(DB, this);
+        FUNCTION_LOG_PARAM(STRING, path);
+    FUNCTION_LOG_END();
+
+    ASSERT(this != NULL);
+    ASSERT(path != NULL);
+
+    if (dbSuperuser(this) || dbWriteRole(this))
+    {
+        // Check remotely
+        if (this->remoteClient != NULL)
+        {
+            ProtocolCommand *command = protocolCommandNew(PROTOCOL_COMMAND_DB_SYNC_CHECK);
+            PackWrite *const param = protocolCommandParam(command);
+
+            pckWriteU32P(param, this->remoteIdx);
+            pckWriteStrP(param, path);
+
+            protocolClientExecute(this->remoteClient, command, false);
+        }
+        // Else locally
+        else
+        {
+            dbSyncCheckHelper(this->client, path);
+        }
+    }
+
+    FUNCTION_LOG_RETURN_VOID();
 }
 
 /**********************************************************************************************************************************/

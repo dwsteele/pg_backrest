@@ -78,14 +78,15 @@ testRun(void)
                     HRNPQ_MACRO_OPEN(1, "dbname='testdb' port=5432"),
                     HRNPQ_MACRO_SET_SEARCH_PATH(1),
                     HRNPQ_MACRO_SET_CLIENT_ENCODING(1),
-                    HRNPQ_MACRO_VALIDATE_QUERY(1, PG_VERSION_84, TEST_PATH "/pg", NULL, NULL),
+                    HRNPQ_MACRO_VALIDATE_QUERY(1, PG_VERSION_84, TEST_PATH "/pg", NULL, NULL, false, false),
                     HRNPQ_MACRO_CLOSE(1),
 
                     HRNPQ_MACRO_OPEN(1, "dbname='testdb' port=5432"),
                     HRNPQ_MACRO_SET_SEARCH_PATH(1),
                     HRNPQ_MACRO_SET_CLIENT_ENCODING(1),
-                    HRNPQ_MACRO_VALIDATE_QUERY(1, PG_VERSION_84, TEST_PATH "/pg", NULL, NULL),
+                    HRNPQ_MACRO_VALIDATE_QUERY(1, PG_VERSION_84, TEST_PATH "/pg", NULL, NULL, false, false),
                     HRNPQ_MACRO_WAL_SWITCH(1, "xlog", "000000030000000200000003"),
+                    // HRNPQ_MACRO_SYNC_FILE_ALL(1, TEST_PATH_PG),
                     HRNPQ_MACRO_CLOSE(1),
 
                     HRNPQ_MACRO_DONE()
@@ -155,6 +156,7 @@ testRun(void)
                         TEST_RESULT_VOID(dbOpen(db), "open db");
                         TEST_RESULT_UINT(db->remoteIdx, 1, "check idx");
                         TEST_RESULT_STR_Z(dbWalSwitch(db), "000000030000000200000003", "wal switch");
+                        // TEST_RESULT_VOID(dbSyncCheck(db, STRDEF(TEST_PATH_PG)), "    sync");
                         TEST_RESULT_VOID(memContextCallbackClear(db->pub.memContext), "clear context so close is not called");
                     }
                     FINALLY()
@@ -201,7 +203,10 @@ testRun(void)
                 "[\"select (select setting from pg_catalog.pg_settings where name = 'server_version_num')::int4,"
                     " (select setting from pg_catalog.pg_settings where name = 'data_directory')::text,"
                     " (select setting from pg_catalog.pg_settings where name = 'archive_mode')::text,"
-                    " (select setting from pg_catalog.pg_settings where name = 'archive_command')::text\"]",
+                    " (select setting from pg_catalog.pg_settings where name = 'archive_command')::text,"
+                    " (select rolsuper from pg_roles where rolname = current_role)::bool,"
+                    " ((select count(*) > 0 from pg_roles where rolname = 'pg_write_server_files')::bool"
+                        " and (select pg_has_role('pg_write_server_files', 'USAGE')))::bool\"]",
                 .resultInt = 1},
             {.session = 1, .function = HRNPQ_CONSUMEINPUT},
             {.session = 1, .function = HRNPQ_ISBUSY},
@@ -562,7 +567,7 @@ testRun(void)
             HRNPQ_MACRO_OPEN(1, "dbname='postgres' port=5432 user='bob'"),
             HRNPQ_MACRO_SET_SEARCH_PATH(1),
             HRNPQ_MACRO_SET_CLIENT_ENCODING(1),
-            HRNPQ_MACRO_VALIDATE_QUERY(1, PG_VERSION_94, TEST_PATH "/pg", NULL, NULL),
+            HRNPQ_MACRO_VALIDATE_QUERY(1, PG_VERSION_94, TEST_PATH "/pg", NULL, NULL, false, false),
             HRNPQ_MACRO_SET_APPLICATION_NAME(1),
             HRNPQ_MACRO_IS_STANDBY_QUERY(1, true),
             HRNPQ_MACRO_CLOSE(1),
@@ -579,7 +584,7 @@ testRun(void)
             HRNPQ_MACRO_OPEN(1, "dbname='postgres' port=5432 user='bob'"),
             HRNPQ_MACRO_SET_SEARCH_PATH(1),
             HRNPQ_MACRO_SET_CLIENT_ENCODING(1),
-            HRNPQ_MACRO_VALIDATE_QUERY(1, PG_VERSION_94, TEST_PATH "/pg", NULL, NULL),
+            HRNPQ_MACRO_VALIDATE_QUERY(1, PG_VERSION_94, TEST_PATH "/pg", NULL, NULL, false, false),
             HRNPQ_MACRO_SET_APPLICATION_NAME(1),
             HRNPQ_MACRO_IS_STANDBY_QUERY(1, false),
             HRNPQ_MACRO_CLOSE(1),
@@ -605,6 +610,8 @@ testRun(void)
         TEST_RESULT_BOOL(result.standby == NULL, true, "    check standby");
         TEST_RESULT_INT(dbPgVersion(result.primary), PG_VERSION_84, "    version set");
         TEST_RESULT_STR_Z(dbPgDataPath(result.primary), TEST_PATH "/pg1", "    path set");
+        TEST_RESULT_BOOL(dbSuperuser(result.primary), false, "    not superuser");
+        TEST_RESULT_BOOL(dbWriteRole(result.primary), false, "    no write role");
 
         TEST_RESULT_VOID(dbFree(result.primary), "free primary");
 
